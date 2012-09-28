@@ -11,6 +11,8 @@ License: GPL version 2 or later - http://www.gnu.org/licenses/old-licenses/gpl-2
 if ( !defined('WP_LOAD_IMPORTERS') )
 	return;
 
+ini_set('max_execution_time', 0);
+
 require_once ABSPATH . 'wp-admin/includes/import.php';
 
 class Squarespace_Import {
@@ -350,29 +352,37 @@ class Squarespace_Import {
 			printf(' '._n('(%s ping)', '(%s pings)', $num_pings, 'squarespace-importer'), $num_pings);
 
 		echo "</li>";
-		//ob_flush();flush();
+
+        ob_flush();flush();
 	}
 	
 	protected function download_images( $post ) {
-		// Download squarespace images
-		preg_match_all('#(?<old_html><span class="[^"]+"><span><img.*src="(?<src>[^"]+)" alt="(?<alt>[^"]?)".*/></span></span>)#Um', $post->post_content, $images);
-		
-		if ( ! $num_images = count($images['src']) )
+		// Match squarespace images
+		preg_match_all('#(?<ss_image><img.*src="(?<ss_src>/storage/[^"]+)".*>)#Um', $post->post_content, $images);
+
+        if ( ! $num_images = count($images['ss_src']) )
 			return;
-		
-		$images_downloaded = false;
+
+        $images_downloaded = false;
 		
 		for( $i = 0; $i < $num_images; $i++ ) {
-			$old_html = $images['old_html'][$i];
-			$src = $images['src'][$i];
-			$alt = $images['alt'][$i];
+			$img_html = $images['ss_image'][$i];
+            $src = $images['ss_src'][$i];
+            $alt = "";
+
+            preg_match('#alt="([^"]+)"#', $img_html, $matches);
+            if (isset($matches[1]))
+                $alt = $matches[1];
+
+            unset($matches);
+
 			$full_src = $src;
 			if ( ! preg_match( '#^https?://#', $full_src ) )
 				$full_src = rtrim(SQUARESPACE_URL, '/') . $full_src;
 			
-			if( strpos( $src, 'SQUARESPACE_CACHEVERSION' ) === FALSE ) {
+			/*if( strpos( $src, 'SQUARESPACE_CACHEVERSION' ) === FALSE ) {
 				continue;
-			}
+			}*/
 			
 			$new_html = media_sideload_image( $full_src, $post->ID, $alt );
 			
@@ -381,12 +391,14 @@ class Squarespace_Import {
 				continue;
 			}
 			
-			$post->post_content = str_replace( $old_html, $new_html, $post->post_content );
+			$post->post_content = str_replace( $img_html, $new_html, $post->post_content );
 			
 			printf('<br />'.__('Squarespace image imported <em>%s</em>...', 'squarespace-importer'), esc_attr($src) );
 			
 			$images_downloaded = true;
 		}
+
+        echo '<br />';
 		
 		if ( ! get_post_meta( $post->ID, '_thumbnail_id', true ) ) {
 			$args = array(
@@ -588,4 +600,7 @@ register_importer( 'ss', __( 'Squarespace', 'squarespace-importer' ), __( 'Impor
 function squarespace_importer_init() {
     load_plugin_textdomain( 'squarespace-importer', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 }
+
 add_action( 'init', 'squarespace_importer_init' );
+
+
